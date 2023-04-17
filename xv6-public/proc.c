@@ -310,6 +310,35 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+// MLFQ functions
+int
+isEmpty(struct mlfq *q)
+{
+	if(q -> front == q -> rear)
+		return 1;
+	return 0;
+}
+
+int
+isFull(struct mlfq *q)
+{
+	if((q -> rear + 1) % 65 == q -> front)
+		return 1;
+	return 0;
+}
+
+void
+enqueue(struct mlfq *q, struct proc *p)
+{
+	if(isFull(q))
+	{
+		// panic("Queue is full!");
+		return;
+	}
+	q -> rear = (q -> rear + 1) % 65;
+	q -> queue[0][q -> rear] = *p;
+}
+
 
 //PAGEBREAK: 42
 // Per-CPU process scheduler.

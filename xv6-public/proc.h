@@ -56,3 +56,14 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+// mlfq
+struct mlfq {
+	int front0;
+	int rear0;
+	int front1;
+	int rear1;
+	int front2;
+	int rear2;
+	struct proc* queue[3][65];
+};
