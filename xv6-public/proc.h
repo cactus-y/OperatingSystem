@@ -57,17 +57,3 @@ struct proc {
 //   fixed-size stack
 //   expandable heap
 
-// mlfq
-struct mlfq {
-	struct queue queue[3];
-	int time_quantum[3];
-	int global_tick;
-	int num_procs;
-};
-
-struct queue {
-	struct proc* procs[65];
-	int front;
-	int rear;
-	int num_procs;
-};
