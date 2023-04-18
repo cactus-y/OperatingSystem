@@ -59,11 +59,15 @@ struct proc {
 
 // mlfq
 struct mlfq {
-	int front0;
-	int rear0;
-	int front1;
-	int rear1;
-	int front2;
-	int rear2;
-	struct proc* queue[3][65];
+	struct queue queue[3];
+	int time_quantum[3];
+	int global_tick;
+	int num_procs;
+};
+
+struct queue {
+	struct proc* procs[65];
+	int front;
+	int rear;
+	int num_procs;
 };
