@@ -1,17 +1,19 @@
-#include "proc.h"
-// Multiple Level Feedback Queue
-struct queue {
-	int front;
-	int rear;
-	struct proc *arr[65];
-};
+// #include "proc.h"
 
-void init_queue(struct queue *q);
+// // Multiple Level Feedback Queue
 
-int isEmpty(struct queue *q);
+// struct mlfq {
+// 	struct proc* arr[3][64];
+// 	int front[3];
+// 	int rear[3];
+// };
 
-int isFull(struct queue *q);
+// void init_queue(struct mlfq *mq);
 
-void enqueue(struct queue *q, struct proc *p);
+// int isEmpty(struct mlfq *mq, int level);
 
-void dequeue(struct queue *q);
+// int isFull(struct mlfq *mq, int level);
+
+// void enqueue(struct mlfq *mq, struct proc *p);
+
+// void dequeue(struct mlfq *mq);
