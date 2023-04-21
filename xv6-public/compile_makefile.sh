@@ -1,3 +1,3 @@
 #!/bin/bash
 
-make clean && make && make fs.img && ./bootxv6.sh
+make clean && make -j && make fs.img -j && ./bootxv6.sh
