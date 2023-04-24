@@ -6,7 +6,6 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-// #include "mlfq.h"
 
 struct {
   struct spinlock lock;
@@ -21,10 +20,157 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+struct mlfq mq;
+
+int global_tick = 0;
+
+
+// MLFQ FUNCTIONS
+// init mlfq. set each queue's front rear 0
+void
+init_queue(struct mlfq *mq)
+{
+  for(int i = 0; i < 3; i++) {
+    for(int j = 0; j < 64; j++) {
+      mq -> arr[i][j] = 0;
+    }
+    mq -> front[i] = 0;
+    mq -> rear[i] = 0;
+  }
+}
+
+
+// check the emptiness of the queue
+int
+isEmpty(struct mlfq *mq, int level)
+{
+  if(mq -> front[level] == mq -> rear[level])
+    return 1;
+  return 0;
+}
+
+// check whether the queue is full or not
+int
+isFull(struct mlfq *mq, int level)
+{
+  if(mq -> front[level] == (mq -> rear[level] + 1) % 64)
+    return 1;
+  return 0;
+}
+
+// enqueue the process into the queue
+void
+enqueue(struct mlfq *mq, struct proc *p, int level)
+{
+  if(isFull(mq, level)) {
+    panic("queue is full\n");
+  } else {
+    mq -> rear[level] = (mq -> rear[level] + 1) % 64;
+    mq -> arr[level][mq -> rear[level]] = p;
+    p -> queue_idx = mq -> rear[level];
+  }  
+}
+
+// dequeue the process and return it
+struct proc*
+dequeue(struct mlfq *mq, int level)
+{
+  struct proc *p;
+  if(isEmpty(mq, level)) {
+    panic("empty queue\n");
+    return 0;
+  } else {    
+    // int pos = (mq -> front[level] + 1) % 64;
+    // p = mq -> arr[level][pos];
+    // mq -> arr[level][pos] = 0;
+    // mq -> front[level] = pos;
+    mq -> front[level] = (mq -> front[level] + 1) % 64;
+    p = mq -> arr[level][mq -> front[level]];
+    mq -> arr[level][mq -> front[level]] = 0;
+    return p;
+  }
+}
+
+
+int
+get_queue_size(struct mlfq *mq, int level) {
+  return (mq -> rear[level] - mq -> front[level] + 64) % 64;
+}
+
+// delete the process from the queue
+void
+delete_queue(struct mlfq *mq, int idx, int level)
+{
+  int x = idx - mq -> front[level] + 64;
+  x %= 64;
+  for(int i = 1; i < x; i++) {
+    struct proc *temp = dequeue(mq, level);
+    enqueue(mq, temp, level);
+  }
+  dequeue(mq, level);
+}
+
+
+
+// get minimum priority of l2. this can be used only for l2
+int
+getMinPriority(struct mlfq *mq) 
+{
+  if(isEmpty(mq, 2)) {
+    panic("empty l2 queue\n");
+    return -1;
+  } else {
+    int min = 3;
+    for(int i = (mq -> front[2] + 1) % 64; i <= mq -> rear[2]; i = (i + 1) % 64) {
+      if(mq -> arr[2][i] -> priority < min)
+        min = mq -> arr[2][i] -> priority;
+    }
+    return min;
+  }
+  // struct proc *p;
+  // int min = 3;
+  // for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+  //   if(p -> state == RUNNABLE && p -> priority < min)
+  //     min = p -> priority;
+  // }
+  // return min;
+}
+
+void
+priorityBoost(struct mlfq *mq) {
+  
+  // for(int i = 0; i < 3; i++) {
+  //   // int x = mq -> rear[i] - mq -> front[i] + 64;
+  //   // x %= 64;
+  //   int x = get_queue_size(mq, i);
+  //   for(int j = 0; j < x; j++) {
+  //     struct proc *temp = dequeue(mq, i);
+      
+  //     temp -> used_time = 0;
+  //     temp -> level = 0;
+  //     temp -> priority = 3;
+  //     enqueue(mq, temp, 0);
+  //   }
+  // }
+  
+struct proc *p;
+  init_queue(mq);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if(p -> state != RUNNABLE)
+      continue;
+    p -> used_time = 0;
+    p -> level = 0;
+    p -> priority = 3;
+    enqueue(mq, p, 0);
+  }
+
+}
+
 void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  init_queue(&mq);
 }
 
 // Must be called with interrupts disabled
@@ -66,6 +212,82 @@ myproc(void) {
   return p;
 }
 
+// syscall
+void
+setPriority(int p, int i)
+{
+  struct proc *prc;
+  if(holding(&ptable.lock)) {
+    for(prc = ptable.proc; prc < &ptable.proc[NPROC]; prc++) {
+      if(prc -> pid == p)
+        prc -> priority = i;
+    }
+  } else {
+    acquire(&ptable.lock);
+    for(prc = ptable.proc; prc < &ptable.proc[NPROC]; prc++) {
+      if(prc -> pid == p)
+        prc -> priority = i;
+    }
+    release(&ptable.lock);
+  }
+
+  // struct proc *prc = myproc();
+  // if(p == prc -> level)
+  //   prc -> priority = i;
+  // else
+  //   panic("wrong process\n");
+}
+
+// setPriority wrapper
+int
+sys_setPriority(void)
+{
+  int p, i;
+  if(argint(0, &p) < 0 || argint(1, &i) < 0)
+    return -1;
+
+  setPriority(p, i);
+  return 0;
+}
+
+int
+getLevel(void)
+{
+  // struct proc *p;
+  // int lev = -1;
+  // if(holding(&ptable.lock)) {
+  //   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+  //     if(p -> state == RUNNING) {
+  //       lev = p -> level;
+  //       break;
+  //     }
+  //   }
+  // } else {
+  //   acquire(&ptable.lock);
+  //   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+  //     if(p -> state == RUNNING) {
+  //       lev = p -> level;
+  //       break;
+  //     } 
+  //   }
+  //   release(&ptable.lock);
+  // }
+  // return lev;
+
+  struct proc *p = myproc();
+  if(p == 0)
+    return -1;
+  
+  return p -> level;
+}
+
+int
+sys_getLevel(void)
+{
+  return getLevel();
+}
+
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -89,6 +311,13 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+
+  p -> priority = 3;
+  p -> used_time = 0;
+  p -> level = 0;
+  p -> queue_idx = 0;
+
+  enqueue(&mq, p, p -> level);
 
   release(&ptable.lock);
 
@@ -264,6 +493,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  // delete_queue(&mq, curproc -> queue_idx, curproc -> level);
   sched();
   panic("zombie exit");
 }
@@ -296,6 +526,10 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+
+        // delete process from queue
+        // delete_queue(&mq, p -> queue_idx, p -> level);
+
         release(&ptable.lock);
         return pid;
       }
@@ -311,59 +545,6 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
-// MLFQ functions
-void 
-init_queue(struct queue *q)
-{
-	q -> front = 0;
-	q -> rear = 0;
-}
-
-int 
-isEmpty(struct queue *q)
-{
-	if(q -> front == q -> rear)
-		return 1;
-	return 0;
-}
-
-int 
-isFull(struct queue *q) 
-{
-	if(q -> front == (q -> rear + 1) % 65)
-		return 1;
-	return 0;
-}
-
-void 
-enqueue(struct queue *q, struct proc *p)
-{
-	if(isFull(q))
-	{
-		//
-	}
-	else
-	{
-		q -> rear = (q -> rear + 1) % 65;
-		q -> arr[q -> rear] = p;
-	}
-}
-
-void 
-dequeue(struct queue *q) 
-{
-	if(isEmpty(q))
-	{
-		//
-	}
-	else
-	{
-		q -> front = (q -> front + 1) % 65;
-	}
-}
-
-
-
 
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
@@ -373,41 +554,167 @@ dequeue(struct queue *q)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+
+// void
+// scheduler(void)
+// {
+//   struct proc *p;
+//   struct cpu *c = mycpu();
+//   c->proc = 0;
+  
+//   for(;;){
+//     // Enable interrupts on this processor.
+//     sti();
+
+//     // Loop over process table looking for process to run.
+//     acquire(&ptable.lock);
+//     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//       if(p->state != RUNNABLE)
+//         continue;
+
+//       // Switch to chosen process.  It is the process's job
+//       // to release ptable.lock and then reacquire it
+//       // before jumping back to us.
+//       c->proc = p;
+//       switchuvm(p);
+//       p->state = RUNNING;
+
+//       swtch(&(c->scheduler), p->context);
+//       switchkvm();
+
+//       // Process is done running for now.
+//       // It should have changed its p->state before coming back.
+//       c->proc = 0;
+//     }
+//     release(&ptable.lock);
+
+//   }
+// }
+
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  c->proc = 0;
-  
-  for(;;){
-    // Enable interrupts on this processor.
+  c -> proc = 0;
+
+  for(;;) {
+    int found = 0;
+    int pos = 0;
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+    
+    // cprintf("global tick: %d\n", global_tick);
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+    if(global_tick == 99) {
+      // cprintf("priority boost\n");
+      priorityBoost(&mq);
+      global_tick++;
+      global_tick %= 100;
+      
+      release(&ptable.lock);
+      continue;
     }
-    release(&ptable.lock);
+    global_tick++;
+    global_tick %= 100;
 
+    // l0 queue
+    for(int i = (mq.front[0] + 1) % 64; i <= mq.rear[0]; i = (i + 1) % 64) {
+      p = mq.arr[0][i];
+      if(p == 0 && !isEmpty(&mq, 0)) {
+        dequeue(&mq, 0);
+      } else if(p -> state == RUNNABLE){
+        found = 1;
+        pos = i;
+        break;
+      } 
+    }
+
+    // if there is no runnable process in l0 queue
+    if(found == 0) {
+      // l1 queue
+      for(int i = (mq.front[1] + 1) % 64; i <= mq.rear[1]; i = (i + 1) % 64) {
+        p = mq.arr[1][i];
+        if(p == 0 && !isEmpty(&mq, 1)) {
+          dequeue(&mq, 1);
+        } else if(p -> state == RUNNABLE) {
+          found = 1;
+          pos = i;
+          break;
+        }   
+      } 
+    }
+    
+    // if there is no runnable process in l1 queue and l2 is not empty
+    if(found == 0 && !isEmpty(&mq, 2)) {
+      // l2 queue
+      int min_priority = getMinPriority(&mq);
+      // cprintf("min_priority: %d\n", min_priority);
+      for(int i = (mq.front[2] + 1) % 64; i <= mq.rear[2]; i = (i + 1) % 64) {
+        p = mq.arr[2][i];
+        if(p == 0) {
+          dequeue(&mq, 2);
+        } else if(p -> priority == min_priority && p -> state == RUNNABLE) {
+          found = 1;
+          pos = i;
+          break;
+        }
+      }
+    }
+
+    // there is no runnable process in mlfq
+    if(found == 0) {
+      release(&ptable.lock);
+      continue;
+    }
+
+    // cprintf("queue size: %d, pid: %d, priority: %d, level: %d, used_time: %d, queue_idx: %d, global tick : %d\n", get_queue_size(&mq, p->level), p -> pid, p -> priority, p -> level, p -> used_time, p -> queue_idx, global_tick);
+    
+    // priority scheduling for l2. find process having highest priority
+    if(p -> level == 2) {
+      // how many iterations
+      int x = pos - mq.front[2] + 64;
+      x %= 64;
+
+      // moving processes not to break queue structure
+      for(int i = 1; i < x; i++) {
+        struct proc *temp = dequeue(&mq, 2);
+        enqueue(&mq, temp, 2);
+      }
+      // now highest priority process is at the front
+    }
+
+    c -> proc = p;
+    switchuvm(p);
+    p -> state = RUNNING;
+
+    swtch(&(c -> scheduler), p -> context);
+    switchkvm();
+    
+
+    p -> used_time++;
+
+    dequeue(&mq, p -> level);
+    if(p -> used_time >= (2 * p -> level) + 4) {
+      p -> used_time = 0;
+      if(p -> level == 2) {
+        if(p -> priority > 0) 
+          p -> priority -= 1;
+        else
+          p ->priority = 0;
+      }  
+      else 
+        p -> level += 1;
+    }
+    enqueue(&mq, p, p -> level);
+    c -> proc = 0;
+    
+    release(&ptable.lock);
   }
 }
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -443,6 +750,18 @@ yield(void)
   myproc()->state = RUNNABLE;
   sched();
   release(&ptable.lock);
+}
+
+// yield wrap function
+int
+sys_yield(void)
+{
+  if(myproc() != 0) {
+    yield();
+    return 0;
+  }
+    
+  return -1;
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -586,3 +905,4 @@ procdump(void)
     cprintf("\n");
   }
 }
+

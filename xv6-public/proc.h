@@ -54,6 +54,7 @@ struct proc {
   int used_time;               // time quantum changes
   int level;                   // queue level
   int priority;                // priority of process. (Normally 3)
+  int queue_idx;               // index of process in queue
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -61,3 +62,12 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+
+// MLFQ
+struct mlfq {
+	struct proc* arr[3][64];
+	int front[3];
+	int rear[3];
+};
+

@@ -36,12 +36,12 @@ int fork_children2()
     }
     else
     {
-      int r = setpriority(p, i);
-      if (r < 0)
-      {
-        printf(1, "setpriority returned %d\n", r);
-        exit();
-      }
+      setPriority(p, i);
+      // if (r < 0)
+      // {
+      //   printf(1, "setpriority returned %d\n", r);
+      //   exit();
+      // }
     }
   }
   return parent;
@@ -81,16 +81,16 @@ int main(int argc, char *argv[])
   printf(1, "MLFQ test start\n");
 
   printf(1, "[Test 1] default\n");
-  pid = fork_children();
+  pid = fork_children3();
 
   if (pid != parent)
   {
     for (i = 0; i < NUM_LOOP; i++)
     {
-      int x = getlev();
+      int x = getLevel();
       if (x < 0 || x > 4)
       {
-        printf(1, "Wrong level: %d\n", x);
+        printf(2, "Wrong level: %d\n", x);
         exit();
       }
       count[x]++;
@@ -104,3 +104,4 @@ int main(int argc, char *argv[])
   printf(1, "done\n");
   exit();
 }
+

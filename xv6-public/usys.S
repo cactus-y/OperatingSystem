@@ -30,3 +30,7 @@ SYSCALL(sbrk)
 SYSCALL(sleep)
 SYSCALL(uptime)
 SYSCALL(myfunction)
+SYSCALL(setPriority)
+SYSCALL(getLevel)
+SYSCALL(yield)
+
